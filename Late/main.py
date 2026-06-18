@@ -2,6 +2,7 @@
 import pygame
 from enum import Enum
 import math
+import time
 
 pygame.init()
 pygame.display.set_caption("Late")
@@ -12,10 +13,21 @@ running = True
 # Global Variables
 paths = []
 obstacle_list = []
+path_rect = {}
+ramps = {}
+side_obstacles = {}
 
-alive = True
+latest_x_vel = 0
+latest_y_vel = 0
 
-key_force = 50
+ramp_active = False
+
+stage = 0
+
+ay_live = True
+move_pause = False
+
+key_force = 7
 
 fps = 120
 g = 9.18
@@ -30,16 +42,21 @@ SNOW = pygame.Color("#b9e8ea")
 SNOW_CLIFF = pygame.Color("#73c7ca")
 
 # Maps
-def ski_resort():
+def top_ski_resort():
     # Starting Area
-    fence1 = Path("fence1", SurfaceType.FENCE, Surfaces.WOOD, (screen.get_width() / 2) + 50, 290, 200, 10, 0)
-    fence2 = Path("fence2", SurfaceType.FENCE, Surfaces.WOOD, (screen.get_width() / 2) - 250, 290, 200, 10, 0)
-    fence3 = Path("fence3", SurfaceType.FENCE, Surfaces.WOOD, (screen.get_width() / 2) - 250, 800, 500, 10, 0)
-    fence4 = Path("fence4", SurfaceType.FENCE, Surfaces.WOOD, (screen.get_width() / 2) - 260, 300, 10, 500, 0)
-    fence5 = Path("fence5", SurfaceType.FENCE, Surfaces.WOOD, (screen.get_width() / 2) + 250, 300, 10, 500, 0)
+    fence1 = Path("fence1", SurfaceType.OBSTACLE, Surfaces.WOOD, (screen.get_width() / 2) + 50, 290, 200, 10, 0, 0)
+    fence2 = Path("fence2", SurfaceType.OBSTACLE, Surfaces.WOOD, (screen.get_width() / 2) - 250, 290, 200, 10, 0, 0)
+    fence3 = Path("fence3", SurfaceType.OBSTACLE, Surfaces.WOOD, (screen.get_width() / 2) - 250, 800, 500, 10, 0, 0)
+    fence4 = Path("fence4", SurfaceType.OBSTACLE, Surfaces.WOOD, (screen.get_width() / 2) - 260, 300, 10, 500, 0, 0)
+    fence5 = Path("fence5", SurfaceType.OBSTACLE, Surfaces.WOOD, (screen.get_width() / 2) + 250, 300, 10, 500, 0, 0)
 
-    snow_start = Path("snow_start", SurfaceType.FLAT, Surfaces.SNOW, (screen.get_width() / 2) - 250, 300, 500, 500, 0)
-    wood_path1 = Path("wood_path_1", SurfaceType.FLAT, Surfaces.WOOD, (screen.get_width() / 2) - 50, -190, 100, 500, 0)
+    snow_start = Path("snow_start", SurfaceType.FLAT, Surfaces.SNOW, (screen.get_width() / 2) - 250, 300, 500, 500, 0, 0)
+    wood_path1 = Path("wood_path_1", SurfaceType.FLAT, Surfaces.WOOD, (screen.get_width() / 2) - 50, -290, 100, 600, 0, 0)
+
+    stage1 = Path("ramp1", SurfaceType.RAMP, Surfaces.TOP_RAMP, (screen.get_width() / 2) - 40, -180, 80, 80, 0, 0)
+
+def side_ski_resort():
+    side_wood_path1 = Path("wood_path_1", SurfaceType.FLAT, Surfaces.RAMP, (screen.get_width() / 2) - 300, (screen.get_height() / 2) + 50, 600, 50, 0, 0)
 
 # Classes
 class RectButton:
@@ -66,10 +83,9 @@ class Vehicle:
         Vehicle.instance = self
 
     def update(self):
-        path_update(self)
         blocks = check_for_blocking(self)
 
-        if alive is True:
+        if ay_live is True and move_pause == False:
             if w == True:
                 accelerate(v, pygame.Vector2(0, -(key_force)))
             if s == True:
@@ -81,30 +97,49 @@ class Vehicle:
                 if blocks[0] == False:
                     accelerate(v, pygame.Vector2(key_force, 0))
 
+        if move_pause == True:
+            if a == True:
+                if blocks[1] == False:
+                    accelerate(v, pygame.Vector2(-(key_force), 0))
+            if d == True:
+                if blocks[0] == False:
+                    accelerate(v, pygame.Vector2(key_force, 0))
+
         apply_friction(v)
 
-        # Render (LAST)
-        pygame.draw.rect(screen, "black", pygame.Rect((screen.get_width() / 2) - 20, (screen.get_height() / 2) - 20, 40, 40))
+        if move_pause == False:
+            # Render (LAST)
+            pygame.draw.rect(screen, "black", pygame.Rect((screen.get_width() / 2) - 20, (screen.get_height() / 2) - 50, 40, 40))
+        elif move_pause == True:
+            pygame.draw.rect(screen, "black", pygame.Rect((screen.get_width() / 2) - 50, (screen.get_height() / 2) - 50, 100, 100))
 
     def get_surface(self):
+        dict = self.rectangle.collidedictall(path_rect, 1)
+        if len(dict) == 0 and move_pause == False:
+            kill()
+
+        ramp_dict = self.rectangle.collidedictall(ramps, 1)
+        if len(ramp_dict) != 0:
+            if ramp_active == False:
+                activate_ramp(self)
+
         for p in paths:
             if (screen.get_width() / 2) - 20 > p.start_x and (screen.get_width() / 2) + 20 < (p.start_x + p.width) and (screen.get_height() / 2) - 20 > p.start_y and (screen.get_height() / 2) + 20 < (p.start_y + p.height):
                 return p
 
 class SurfaceType(Enum):
     FLAT = 0
-    WALL = 90
-    RAMP_30 = 30
-    RAMP_45 = 45
-    RAMP_60 = 60
-    FENCE = -1
+    RAMP = 45
+    OBSTACLE = -1
 
 class Surfaces(Enum): # Material = [friction, color]
     SNOW = [0.001, SNOW]
     WOOD = [0.01, "brown"]
+    RAMP = [0, "brown"]
+    TOP_RAMP = [0, "blue"]
 
 class Path:
-    def __init__(self, name, type, surface, start_x, start_y, width, height, thickness):
+    def __init__(self, name, type, surface, start_x, start_y, width, height, thickness, angle):
         self.name = name
         self.type = type
         self.surface = surface
@@ -113,8 +148,38 @@ class Path:
         self.width = width
         self.height = height
         self.thickness = thickness
+        self.angle = angle
         self.rectangle = pygame.Rect(self.start_x, self.start_y, self.width, self.height)
         paths.append(self)
+
+    def update(self, vehicle):
+        obstacle_list.clear()
+        path_rect.clear()
+
+        for p in paths:
+            if move_pause == False:
+                p.start_x = p.start_x - vehicle.velocity.x
+                p.start_y = p.start_y - vehicle.velocity.y
+            elif move_pause == True:
+                if self.surface.name == "RAMP":
+                    self.start_x = self.start_x - vehicle.velocity.x
+                    self.start_y = self.start_y - vehicle.velocity.y
+
+            if p.type.name == "OBSTACLE":
+                obstacle_list.append(pygame.Rect(p.start_x, p.start_y, p.width, p.height))
+
+            rectangle = pygame.Rect(p.start_x, p.start_y, p.width, p.height)
+
+            path_rect[p] = rectangle
+                
+            if p.type.name == "RAMP":
+                ramps[p] = rectangle
+
+            if move_pause == False:
+                pygame.draw.rect(screen, p.surface.value[1], pygame.Rect(p.start_x, p.start_y, p.width, p.height), p.thickness)
+            elif move_pause == True:
+                if self.surface.name == "RAMP":
+                   pygame.draw.rect(screen, self.surface.value[1], pygame.Rect(self.start_x, self.start_y, self.width, self.height), self.thickness)
 
 # Movement
 def net_force(*force_vectors):
@@ -180,24 +245,52 @@ def apply_friction(vehicle):
     vehicle.velocity = pygame.Vector2(vehicle.velocity.x - F.x, vehicle.velocity.y - F.y)
 
 # Game Logic
-def path_update(vehicle):
+def activate_side_view():
+    pass
+
+    print(latest_y_vel, latest_x_vel)
+def activate_ramp(v):
+    global move_pause
+    move_pause = True
+
+    activate_side_view()
+
+    side_ski_resort()
+
+    global latest_x_vel
+    global latest_y_vel
+
+    latest_x_vel = v.velocity.x
+    latest_y_vel = v.velocity.y
+
+    v.velocity.x = 0
+    v.velocity.y = 0
+
+    global ramp_active
+    ramp_active = True
+def respawn(v):
+    v.velocity.x = 0
+    v.velocity.y = 0
+
+    paths.clear()
     obstacle_list.clear()
-    for p in paths:
-        p.start_x = p.start_x - vehicle.velocity.x
-        p.start_y = p.start_y - vehicle.velocity.y
+    path_rect.clear()
 
-        if p.type.name == "FENCE":
-            obstacle_list.append(pygame.Rect(p.start_x, p.start_y, p.width, p.height))
+    top_ski_resort()
 
-        pygame.draw.rect(screen, p.surface.value[1], pygame.Rect(p.start_x, p.start_y, p.width, p.height), p.thickness)
+    global ay_live
+    ay_live = True
 
-def kill(v):
-    for p in paths:
-        del p
-    del v
+def update_side_view(v):
+    v.update()
+
+def kill():
+    global ay_live
+    ay_live = False
 
 sled = Vehicle("sled", pygame.Vector2(screen.get_width() / 2, (screen.get_height() / 2)), 2000, pygame.Vector2(0,0))
-ski_resort()
+
+top_ski_resort()
 
 while running:
     v = Vehicle.instance
@@ -228,7 +321,23 @@ while running:
 
     # Continuous update functions
     screen.fill(SNOW_CLIFF)
-    v.update()
+
+    if ay_live == True:
+        if move_pause == False:
+            for p in paths:
+                p.update(v)
+
+            v.update()
+        elif move_pause == True:
+            for p in paths:
+                if p.surface.name == "RAMP":
+                    p.update(v)
+
+    elif ay_live == False:
+        respawn(v)
+
+    if move_pause == True:
+        update_side_view(v)
 
     pygame.display.flip()
 

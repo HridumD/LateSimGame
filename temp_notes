@@ -1,0 +1,4 @@
+When exit_ramp()
+
+- acceleration() is called
+- vehicle.velocity stays 0

@@ -1,8 +1,6 @@
 # Imports and Inits
 import pygame
 from enum import Enum
-import math
-import time
 
 pygame.init()
 pygame.display.set_caption("Late")
@@ -11,31 +9,21 @@ clock = pygame.time.Clock()
 running = True
 
 # Global Variables
-paths = []
-obstacle_list = []
-path_rect = {}
-ramps = {}
-side_obstacles = {}
+alive = True
 
-latest_x_vel = 0
-latest_y_vel = 0
+side_view = False
 
-ramp_active = False
-
-stage = 0
-
-ay_live = True
-move_pause = False
-
-key_force = 7
+key_force = 50
 
 fps = 120
-g = 9.18
 
 w = False
 a = False
 s = False
 d = False
+
+paths = {}
+obstacles = {}
 
 # Colors
 SNOW = pygame.Color("#b9e8ea")
@@ -53,79 +41,37 @@ def top_ski_resort():
     snow_start = Path("snow_start", SurfaceType.FLAT, Surfaces.SNOW, (screen.get_width() / 2) - 250, 300, 500, 500, 0, 0)
     wood_path1 = Path("wood_path_1", SurfaceType.FLAT, Surfaces.WOOD, (screen.get_width() / 2) - 50, -290, 100, 600, 0, 0)
 
-    stage1 = Path("ramp1", SurfaceType.RAMP, Surfaces.TOP_RAMP, (screen.get_width() / 2) - 40, -180, 80, 80, 0, 0)
-
-def side_ski_resort():
-    side_wood_path1 = Path("wood_path_1", SurfaceType.FLAT, Surfaces.RAMP, (screen.get_width() / 2) - 300, (screen.get_height() / 2) + 50, 600, 50, 0, 0)
+    stage1 = Path("ramp1", SurfaceType.RAMP, Surfaces.RAMP, (screen.get_width() / 2) - 40, -180, 80, 80, 0, 0)
 
 # Classes
-class RectButton:
-    def __init__(self, name, color, start_x, start_y, width, height):
-        self.name = name
-        self.color = color
-        self.start_x = start_x
-        self.start_y = start_y
-        self.width = width
-        self.height = height
-        self.rect = pygame.Rect(start_x, start_y, width, height)
-    
-    def drawButton(self):
-        pygame.draw.rect(screen, self.color, self.rect)
-
 class Vehicle:
     instance = None
 
-    def __init__(self, name, pos, mass, velocity):
+    def __init__(self, name, size, mass, velocity):
         self.name = name
         self.mass = mass
         self.velocity = velocity
-        self.rectangle = pygame.Rect((screen.get_width() / 2) - 20, (screen.get_height() / 2) - 20, 40, 40)
+        self.size = size
+        self.rectangle = pygame.Rect((screen.get_width() / 2) - (self.size / 2), (screen.get_height() / 2) - (self.size / 2), self.size, self.size)
         Vehicle.instance = self
 
     def update(self):
-        blocks = check_for_blocking(self)
+        if alive == True:
+            blocks = check_for_blocking(self)
 
-        if ay_live is True and move_pause == False:
-            if w == True:
-                accelerate(v, pygame.Vector2(0, -(key_force)))
-            if s == True:
-                accelerate(v, pygame.Vector2(0, key_force))
-            if a == True:
-                if blocks[1] == False:
-                    accelerate(v, pygame.Vector2(-(key_force), 0))
-            if d == True:
-                if blocks[0] == False:
-                    accelerate(v, pygame.Vector2(key_force, 0))
+            if w is True and blocks[3] == False:
+                accelerate(self, pygame.Vector2(0, -(key_force)))
+            if s is True and blocks[2] == False:
+                accelerate(self, pygame.Vector2(0, key_force))
+            if a is True and blocks[1] == False:
+                accelerate(self, pygame.Vector2(-(key_force), 0))
+            if d is True and blocks[0] == False:
+                accelerate(self, pygame.Vector2(key_force, 0))
 
-        if move_pause == True:
-            if a == True:
-                if blocks[1] == False:
-                    accelerate(v, pygame.Vector2(-(key_force), 0))
-            if d == True:
-                if blocks[0] == False:
-                    accelerate(v, pygame.Vector2(key_force, 0))
+            apply_friction(self)
+            check_for_ramp()
 
-        apply_friction(v)
-
-        if move_pause == False:
-            # Render (LAST)
-            pygame.draw.rect(screen, "black", pygame.Rect((screen.get_width() / 2) - 20, (screen.get_height() / 2) - 50, 40, 40))
-        elif move_pause == True:
-            pygame.draw.rect(screen, "black", pygame.Rect((screen.get_width() / 2) - 50, (screen.get_height() / 2) - 50, 100, 100))
-
-    def get_surface(self):
-        dict = self.rectangle.collidedictall(path_rect, 1)
-        if len(dict) == 0 and move_pause == False:
-            kill()
-
-        ramp_dict = self.rectangle.collidedictall(ramps, 1)
-        if len(ramp_dict) != 0:
-            if ramp_active == False:
-                activate_ramp(self)
-
-        for p in paths:
-            if (screen.get_width() / 2) - 20 > p.start_x and (screen.get_width() / 2) + 20 < (p.start_x + p.width) and (screen.get_height() / 2) - 20 > p.start_y and (screen.get_height() / 2) + 20 < (p.start_y + p.height):
-                return p
+            pygame.draw.rect(screen, "black", self.rectangle)
 
 class SurfaceType(Enum):
     FLAT = 0
@@ -135,8 +81,7 @@ class SurfaceType(Enum):
 class Surfaces(Enum): # Material = [friction, color]
     SNOW = [0.001, SNOW]
     WOOD = [0.01, "brown"]
-    RAMP = [0, "brown"]
-    TOP_RAMP = [0, "blue"]
+    RAMP = [-1, "green"]
 
 class Path:
     def __init__(self, name, type, surface, start_x, start_y, width, height, thickness, angle):
@@ -150,94 +95,89 @@ class Path:
         self.thickness = thickness
         self.angle = angle
         self.rectangle = pygame.Rect(self.start_x, self.start_y, self.width, self.height)
-        paths.append(self)
+        paths[self] = self.rectangle
 
     def update(self, vehicle):
-        obstacle_list.clear()
-        path_rect.clear()
+        # Update path position
+        self.rectangle = pygame.Rect(self.start_x, self.start_y, self.width, self.height)
+        paths[self] = self.rectangle
 
-        for p in paths:
-            if move_pause == False:
-                p.start_x = p.start_x - vehicle.velocity.x
-                p.start_y = p.start_y - vehicle.velocity.y
-            elif move_pause == True:
-                if self.surface.name == "RAMP":
-                    self.start_x = self.start_x - vehicle.velocity.x
-                    self.start_y = self.start_y - vehicle.velocity.y
+        self.start_x = self.start_x - vehicle.velocity.x
+        self.start_y = self.start_y - vehicle.velocity.y
 
-            if p.type.name == "OBSTACLE":
-                obstacle_list.append(pygame.Rect(p.start_x, p.start_y, p.width, p.height))
+        # Add to other important dictionaries
+        if self.type.name == "OBSTACLE":
+            obstacles[self] = self.rectangle
 
-            rectangle = pygame.Rect(p.start_x, p.start_y, p.width, p.height)
-
-            path_rect[p] = rectangle
-                
-            if p.type.name == "RAMP":
-                ramps[p] = rectangle
-
-            if move_pause == False:
-                pygame.draw.rect(screen, p.surface.value[1], pygame.Rect(p.start_x, p.start_y, p.width, p.height), p.thickness)
-            elif move_pause == True:
-                if self.surface.name == "RAMP":
-                   pygame.draw.rect(screen, self.surface.value[1], pygame.Rect(self.start_x, self.start_y, self.width, self.height), self.thickness)
+        # Render path (LAST)
+        pygame.draw.rect(screen, self.surface.value[1], self.rectangle, self.thickness)
 
 # Movement
-def net_force(*force_vectors):
-    net_force_x = 0
-    net_force_y = 0
-
-    for force in force_vectors:
-        net_force_x = net_force_x + force.x
-        net_force_y = net_force_y + force.y
-
-    return pygame.Vector2(net_force_x, net_force_y)
-
-def calculate_speed(velocity):
-    return math.sqrt(((velocity.x)*(velocity.x)) + (velocity.y)*(velocity.y))
-
 def check_for_blocking(v):
     px = False
     mx = False
     py = False
     my = False
+    side = False
 
-    col = v.rectangle.collidelist(obstacle_list)
-    if col >= 0:
-        obs = obstacle_list[col]
-        if obs.left > ((screen.get_width() / 2)):
-            v.velocity.x = 0
-            px = True
-        else:
-            px = False
+    collided = v.rectangle.collidedictall(obstacles, 1)
+    if len(collided) >= 0:
+        for c in collided:
+            obs = c[1]
+            if (obs.left) > ((screen.get_width() / 2)):
+                v.velocity.x = 0
+                px = True
+            else:
+                px = False
 
-        if (obs.left + obs.width) < (screen.get_width() / 2):
-            v.velocity.x = 0
-            mx = True
-        else:
-            mx = False
+            if (obs.left + obs.width) < (screen.get_width() / 2):
+                v.velocity.x = 0
+                mx = True
+            else:
+                mx = False
 
-        if obs.top > ((screen.get_height() / 2)):
-            v.velocity.y = 0
-            py = True
-        else:
-            py = False
+            if obs.top > ((screen.get_height() / 2)):
+                v.velocity.y = 0
+                py = True
+            else:
+                py = False
 
-        if (obs.top + obs.height) < (screen.get_height() / 2):
-            v.velocity.y = 0
-            my = True
-        else:
-            my = False
+            if (obs.top + obs.height) < (screen.get_height() / 2):
+                v.velocity.y = 0
+                my = True
+            else:
+                my = False
 
-    return px, mx, py, my
+    return px, mx, py, my, side
 
 def accelerate(vehicle, force_vector):
     A_vector = pygame.Vector2(force_vector.x / vehicle.mass, force_vector.y / vehicle.mass)
 
     vehicle.velocity = pygame.Vector2(vehicle.velocity.x + A_vector.x, vehicle.velocity.y + A_vector.y)
 
+def check_for_ramp():
+    collided = v.rectangle.collidedictall(paths, 1)
+    if len(collided) > 0:
+        for c in collided:
+            sf = c[0].surface.value[0]
+            if sf < 0:
+                return True
+            else:
+                return False
+    else:
+        return False
+
+def get_surface_friction():
+    collided = v.rectangle.collidedictall(paths, 1)
+    if len(collided) > 0:
+        return(collided[0][0].surface.value[0])
+    else:
+        if alive == True:
+            kill(v)
+
 def apply_friction(vehicle):
-    if vehicle.get_surface() is not None:
-        mu = vehicle.get_surface().surface.value[0]
+    if get_surface_friction() is not None:
+        mu = get_surface_friction()
     else:
         mu = 0.0
     
@@ -245,52 +185,26 @@ def apply_friction(vehicle):
     vehicle.velocity = pygame.Vector2(vehicle.velocity.x - F.x, vehicle.velocity.y - F.y)
 
 # Game Logic
-def activate_side_view():
-    pass
+sled = Vehicle("sled", 40, 2000, pygame.Vector2(0,0))
 
-    print(latest_y_vel, latest_x_vel)
-def activate_ramp(v):
-    global move_pause
-    move_pause = True
+top_ski_resort()
 
-    activate_side_view()
-
-    side_ski_resort()
-
-    global latest_x_vel
-    global latest_y_vel
-
-    latest_x_vel = v.velocity.x
-    latest_y_vel = v.velocity.y
-
-    v.velocity.x = 0
-    v.velocity.y = 0
-
-    global ramp_active
-    ramp_active = True
-def respawn(v):
-    v.velocity.x = 0
-    v.velocity.y = 0
-
-    paths.clear()
-    obstacle_list.clear()
-    path_rect.clear()
+def respawn():
+    global alive
+    alive = True
 
     top_ski_resort()
 
-    global ay_live
-    ay_live = True
+def kill(vehicle):
+    global alive
+    alive = False
+    vehicle.velocity = pygame.Vector2(0, 0)
 
-def update_side_view(v):
-    v.update()
+    paths.clear()
+    obstacles.clear()
 
-def kill():
-    global ay_live
-    ay_live = False
+    respawn()
 
-sled = Vehicle("sled", pygame.Vector2(screen.get_width() / 2, (screen.get_height() / 2)), 2000, pygame.Vector2(0,0))
-
-top_ski_resort()
 
 while running:
     v = Vehicle.instance
@@ -322,22 +236,10 @@ while running:
     # Continuous update functions
     screen.fill(SNOW_CLIFF)
 
-    if ay_live == True:
-        if move_pause == False:
-            for p in paths:
-                p.update(v)
+    for p in paths:
+        p.update(v)
 
-            v.update()
-        elif move_pause == True:
-            for p in paths:
-                if p.surface.name == "RAMP":
-                    p.update(v)
-
-    elif ay_live == False:
-        respawn(v)
-
-    if move_pause == True:
-        update_side_view(v)
+    v.update()
 
     pygame.display.flip()
 

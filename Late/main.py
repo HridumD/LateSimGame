@@ -7,6 +7,10 @@ from pathlib import Path
 import asyncio
 
 pygame.init()
+pygame.mixer.init()
+
+ASSET_DIR = Path(__file__).parent / "assets"
+boing = pygame.mixer.Sound(str(ASSET_DIR / "boing.ogg"))
 
 start = time.perf_counter()
 
@@ -231,6 +235,7 @@ def check_for_blocking(v):
             if (obs.left) > ((screen.get_width() / 2)):
                 if v.velocity.x > 0:
                     v.velocity.x = 0
+                    boing.play()
                 px = True
             else:
                 px = False
@@ -238,6 +243,7 @@ def check_for_blocking(v):
             if (obs.left + obs.width) < (screen.get_width() / 2):
                 if v.velocity.x < 0:
                     v.velocity.x = 0
+                    boing.play()
                 mx = True
             else:
                 mx = False
@@ -245,6 +251,7 @@ def check_for_blocking(v):
             if obs.top > ((screen.get_height() / 2)):
                 if v.velocity.y > 0:
                     v.velocity.y = 0
+                    boing.play()
                 py = True
             else:
                 py = False
@@ -252,6 +259,7 @@ def check_for_blocking(v):
             if (obs.top + obs.height) < (screen.get_height() / 2):
                 if v.velocity.y < 0:
                     v.velocity.y = 0
+                    boing.play()
                 my = True
             else:
                 my = False

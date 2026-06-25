@@ -1,2 +1,2 @@
 # LateSimGame
-Simple python game where players simulate being late in different vehicles
+Super slippery and jumpy game where you're late... soooo hurry up.

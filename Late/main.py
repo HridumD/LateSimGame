@@ -3,11 +3,10 @@ import pygame
 from enum import Enum
 import time
 import math
+from pathlib import Path
+import asyncio
 
 pygame.init()
-pygame.mixer.init()
-
-boing = pygame.mixer.Sound("Late/assets/boing.mp3")
 
 start = time.perf_counter()
 
@@ -21,9 +20,11 @@ alive = True
 side_view = False
 end_game = False
 
+font = pygame.font.SysFont(None, 50)
+
 win_text = ""
 
-key_force = 200
+key_force = 1000
 
 fps = 120
 
@@ -84,7 +85,7 @@ class Vehicle:
         if alive == True and side_view == False:
             blocks = check_for_blocking(self)
 
-            check_win()
+            check_win(self)
 
             if w is True and blocks[3] == False:
                 accelerate(self, pygame.Vector2(0, -(key_force)))
@@ -108,10 +109,10 @@ class Vehicle:
                 accelerate(self, pygame.Vector2(key_force, 0))
 
             if w is True and blocks[3] == False and blocks[2] == True:
-                accelerate(self, pygame.Vector2(0, -4*(key_force)))
+                accelerate(self, pygame.Vector2(0, -10*(key_force)))
 
             if blocks[2] == False:
-                accelerate(self, pygame.Vector2(0, 0.7*key_force))
+                accelerate(self, pygame.Vector2(0, 0.3*key_force))
 
             apply_friction(self)
 
@@ -157,8 +158,8 @@ class Path:
             paths[self] = self.rectangle
 
     def update(self, vehicle):
-        check_for_ramp()
-        check_exit_ramp()
+        check_for_ramp(vehicle)
+        check_exit_ramp(vehicle)
 
         if side_view == False:
             if self.view == View.TOP and self.active == 1:
@@ -204,8 +205,8 @@ class Path:
                 pygame.draw.rect(screen, self.surface.value[1], self.rectangle, self.thickness)
 
 # Movement
-def check_win():
-    collided = v.rectangle.collidedictall(ends, 1)
+def check_win(vehicle):
+    collided = vehicle.rectangle.collidedictall(ends, 1)
     
     global end_game
     global text_surface
@@ -230,7 +231,6 @@ def check_for_blocking(v):
             if (obs.left) > ((screen.get_width() / 2)):
                 if v.velocity.x > 0:
                     v.velocity.x = 0
-                    boing.play()
                 px = True
             else:
                 px = False
@@ -238,7 +238,6 @@ def check_for_blocking(v):
             if (obs.left + obs.width) < (screen.get_width() / 2):
                 if v.velocity.x < 0:
                     v.velocity.x = 0
-                    boing.play()
                 mx = True
             else:
                 mx = False
@@ -246,7 +245,6 @@ def check_for_blocking(v):
             if obs.top > ((screen.get_height() / 2)):
                 if v.velocity.y > 0:
                     v.velocity.y = 0
-                    boing.play()
                 py = True
             else:
                 py = False
@@ -254,7 +252,6 @@ def check_for_blocking(v):
             if (obs.top + obs.height) < (screen.get_height() / 2):
                 if v.velocity.y < 0:
                     v.velocity.y = 0
-                    boing.play()
                 my = True
             else:
                 my = False
@@ -266,17 +263,17 @@ def accelerate(vehicle, force_vector):
 
     vehicle.velocity = pygame.Vector2(vehicle.velocity.x + A_vector.x, vehicle.velocity.y + A_vector.y)
 
-def get_surface_friction():
-    collided = v.rectangle.collidedictall(paths, 1)
+def get_surface_friction(vehicle):
+    collided = vehicle.rectangle.collidedictall(paths, 1)
     if len(collided) > 0:
         return(collided[0][0].surface.value[0])
     else:
         if alive == True and side_view == False and end_game == False:
-            kill(v)
+            kill(vehicle)
 
 def apply_friction(vehicle):
-    if get_surface_friction() is not None:
-        mu = get_surface_friction()
+    if get_surface_friction(vehicle) is not None:
+        mu = get_surface_friction(vehicle)
     else:
         mu = 0.0
     
@@ -288,8 +285,8 @@ sled = Vehicle("sled", 40, 2000, pygame.Vector2(0,0))
 
 top_ski_resort()
 
-def check_for_ramp():
-    collided = v.rectangle.collidedictall(paths, 1)
+def check_for_ramp(vehicle):
+    collided = vehicle.rectangle.collidedictall(paths, 1)
     global side_view
 
     if len(collided) > 0:
@@ -299,18 +296,18 @@ def check_for_ramp():
                 side_view = True
                 paths.clear()
                 top_ski_resort()
-                v.velocity.x = -v.velocity.y
-                v.velocity.y = 0
+                vehicle.velocity.x = -vehicle.velocity.y
+                vehicle.velocity.y = 0
 
-def check_exit_ramp():
-    collided = v.rectangle.collidedictall(exit_ramps, 1)
+def check_exit_ramp(vehicle):
+    collided = vehicle.rectangle.collidedictall(exit_ramps, 1)
     global side_view
     global paths_adjusted
 
     if collided is not None:
         if len(collided) > 0 and side_view == True:
             side_view = False
-            v.velocity = pygame.Vector2(0, 0)
+            vehicle.velocity = pygame.Vector2(0, 0)
 
             paths.clear()
             obstacles.clear()
@@ -346,60 +343,67 @@ def kill(vehicle):
     alive = True
     top_ski_resort()
 
-while running:
-    v = Vehicle.instance
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+async def main():
+    global running
+
+    while running:
+        v = Vehicle.instance
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            
+        global w,a,s,d
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_w]:
+            w = True
+        elif keys[pygame.K_w] == False:
+            w = False
         
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_w]:
-        w = True
-    elif keys[pygame.K_w] == False:
-        w = False
-    
-    if keys[pygame.K_a]:
-        a = True
-    elif keys[pygame.K_a] == False:
-        a = False
+        if keys[pygame.K_a]:
+            a = True
+        elif keys[pygame.K_a] == False:
+            a = False
 
-    if keys[pygame.K_s]:
-        s = True
-    elif keys[pygame.K_s] == False:
-        s = False
+        if keys[pygame.K_s]:
+            s = True
+        elif keys[pygame.K_s] == False:
+            s = False
 
-    if keys[pygame.K_d]:
-        d = True
-    elif keys[pygame.K_d] == False:
-        d = False
+        if keys[pygame.K_d]:
+            d = True
+        elif keys[pygame.K_d] == False:
+            d = False
 
-    # Continuous update functions
-    screen.fill(SNOW_CLIFF)
+        # Continuous update functions
+        screen.fill(SNOW_CLIFF)
 
-    try:
-        for p in paths:
-            p.update(v)
-    except RuntimeError as e:
-        if "dictionary changed size during iteration" in str(e):
-            pass
-        else:
-            raise
+        try:
+            for p in paths:
+                p.update(v)
+        except RuntimeError as e:
+            if "dictionary changed size during iteration" in str(e):
+                pass
+            else:
+                raise
 
-    v.update()
+        v.update()
 
-    if end_game == True:
-        # Win Text
-        end = time.perf_counter()
-        total_time = end - start
+        if end_game == True:
+            # Win Text
+            end = time.perf_counter()
+            total_time = end - start
 
-        font = pygame.font.SysFont(None, 50)
-        text_surface = font.render(f'You were {str(math.floor(total_time))}s late', True, "black")
-        text_rect = text_surface.get_rect()
-        text_rect.center = (400, 300)
-        screen.blit(text_surface, text_rect)
+            text_surface = font.render(f'You were {str(math.floor(total_time))}s late', True, "black")
+            text_rect = text_surface.get_rect()
+            text_rect.center = (400, 300)
+            screen.blit(text_surface, text_rect)
 
-    pygame.display.flip()
+        pygame.display.flip()
 
-    clock.tick(fps)
+        clock.tick(fps)
 
-pygame.quit()
+        await asyncio.sleep(0)
+
+    pygame.quit()
+
+asyncio.run(main())
